@@ -12,72 +12,71 @@
 
 #include "get_next_line.h"
 
-t_fd	*search_fd_create(t_fd **first, const int fd)
+t_fd	*search_fd_create(t_fd **first, const int fd, t_fd **prev)
 {
 	t_fd	*elem;
 
 	elem = *first;
+	*prev = NULL;
 	while (elem && elem->fd != fd)
+	{
+		*prev = elem;
 		elem = elem->next;
+	}
 	if (!elem && (elem = (t_fd *)malloc(sizeof(t_fd))))
 	{
+		*prev = NULL;
 		elem->fd = fd;
-		elem->tmp = NULL;
+		if (!(elem->tmp = ft_strnew(0)))
+		{
+			free(&elem);
+			return (NULL);
+		}
 		elem->next = *first;
 		*first = elem;
 	}
 	return (elem);
 }
 
-int		func_for_newline(char **line, char **s)
+void	del_waste_elem(t_fd **first, t_fd *prev, t_fd **elem)
 {
-	char	*tmp;
+	if (!prev)
+		*first = (*elem)->next;
+	else
+		prev->next = (*elem)->next;
+	ft_strdel(&((*elem)->tmp));
+	free(*elem);
+}
 
-	if (!(*line))
+int		newline(char **line, char **tmp, int k)
+{
+	int				i;
+	char			*s;
+
+	i = 0;
+	while ((*tmp)[i] && (*tmp)[i] != '\n')
+		i++;
+	if ((*tmp)[i] == '\n')
 	{
-		if (!(*line = ft_strdup(*s)))
+		if (!(*line = ft_strsub(*tmp, 0, i)))
 			return (-1);
-	}
-	else if (**s != '\n')
-	{
-		if (!(tmp = ft_strjoin(*line, *s)))
+		if (!(s = ft_strsub(*tmp, i + 1, ft_strlen(*tmp) - i - 1)))
 		{
 			ft_strdel(line);
 			return (-1);
 		}
-		ft_strdel(line);
-		*line = tmp;
-	}
-	ft_strdel(s);
-	return (0);
-}
-
-int		newline(char **line, char **s, char *c, char *tmp)
-{
-	unsigned int	j;
-
-	j = 0;
-	while ((*s)[j] && (*s)[j] != '\n')
-		j++;
-	if ((*s)[j] == '\n')
-	{
-		if (!(tmp = ft_strsub(*s, 0, j)))
-			return (-1);
-		if (!(*line = (*line) ? ft_strjoin(c, tmp) : ft_strdup(tmp)))
-		{
-			ft_strdel(&tmp);
-			return (-1);
-		}
-		ft_strdel(&tmp);
-		if (!(tmp = ft_strsub(*s, j + 1, ft_strlen(*s) - 1)))
-			return (-1);
-		ft_strdel(s);
-		*s = tmp;
-		ft_strdel(&c);
+		ft_strdel(tmp);
+		*tmp = s;
 		return (1);
 	}
-	else if (func_for_newline(line, s))
-		return (-1);
+	if (!k && **tmp)
+	{
+		if (!(*line = ft_strdup(*tmp)))
+			return (-1);
+		ft_strdel(tmp);
+		*tmp = ft_strnew(0);
+		return (1);
+	}
 	return (0);
 }
 
@@ -85,36 +84,49 @@ int		gnl(const int fd, char **line, char **tmp, char *buff)
 {
 	int			q;
 	char		*f;
+	int			k;
 
 	*line = NULL;
-	while (read(fd, buff, BUFF_SIZE))
-	{
-		f = *tmp;
-		if (!(*tmp = (*tmp) ? ft_strjoin(f, buff) : ft_strdup(buff)))
-			return (-1);
-		ft_strdel(&f);
-		if ((q = newline(line, tmp, *line, NULL)))
-			return (q);
-		else
+	k = 0;
+	if (!ft_strchr(*tmp, '\n'))
+		while ((k = read(fd, buff, BUFF_SIZE)))
+		{
+			f = *tmp;
+			if (!(*tmp = ft_strjoin(f, buff)))
+				return (-1);
+			ft_strdel(&f);
+			if ((q = newline(line, tmp, k)))
+				return (q);
 			ft_strclr(buff);
-	}
-	if (*tmp && (q = newline(line, tmp, *line, NULL)))
+		}
+	if ((q = newline(line, tmp, k)))
 		return (q);
-	if (*line && **line)
-		return (1);
 	return (0);
 }
 
 int		get_next_line(const int fd, char **line)
 {
 	static t_fd	*first;
+	t_fd		*elem;
+	t_fd		*prev;
 	char		*buff;
-	int			q;
+	int			res;
 
+	buff = NULL;
+	res = -1;
 	if (BUFF_SIZE < 1 || !line || fd < 0 || !(buff = ft_strnew(BUFF_SIZE)) ||
 		read(fd, buff, 0) < 0)
+	{
+		if (buff)
+			ft_strdel(&buff);
 		return (-1);
-	q = gnl(fd, line, &(search_fd_create(&first, fd)->tmp), buff);
+	}
+	if ((elem = search_fd_create(&first, fd, &prev)))
+	{
+		res = gnl(fd, line, &(elem->tmp), buff);
+		if (!res && !(*(elem->tmp)))
+			del_waste_elem(&first, prev, &elem);
+	}
 	ft_strdel(&buff);
-	return (q);
+	return (res);
 }
